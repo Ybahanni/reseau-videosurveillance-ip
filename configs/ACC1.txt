@@ -1,0 +1,65 @@
+! ============================================
+! ACC1 - Switch d'accès caméras (Cisco 2960, PoE+ en réel)
+! Ports caméras sécurisés, trunk vers le CORE, SSH
+! ============================================
+enable
+configure terminal
+hostname ACC1
+no ip domain-lookup
+ip domain-name video.local
+enable secret CHANGE_ME
+username admin privilege 15 secret CHANGE_ME
+service password-encryption
+!
+vlan 10
+ name CAMERAS
+vlan 99
+ name MANAGEMENT
+vlan 999
+ name PARKING
+!
+! ---------- Ports caméras ----------
+interface range FastEthernet0/1 - 12
+ description Cameras IP
+ switchport mode access
+ switchport access vlan 10
+ switchport port-security
+ switchport port-security maximum 1
+ switchport port-security mac-address sticky
+ switchport port-security violation restrict
+ storm-control broadcast level 5.00
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+!
+! ---------- Ports inutilisés ----------
+interface range FastEthernet0/13 - 24 , GigabitEthernet0/2
+ switchport mode access
+ switchport access vlan 999
+ shutdown
+!
+! ---------- Uplink vers CORE ----------
+interface GigabitEthernet0/1
+ description Trunk vers CORE
+ switchport mode trunk
+ switchport trunk native vlan 999
+ switchport trunk allowed vlan 10,99
+ switchport nonegotiate
+!
+! ---------- Management ----------
+interface Vlan99
+ ip address 192.168.99.2 255.255.255.0
+ no shutdown
+ip default-gateway 192.168.99.1
+!
+! Executer ensuite : crypto key generate rsa  (taille 2048)
+ip ssh version 2
+line console 0
+ login local
+ logging synchronous
+line vty 0 15
+ transport input ssh
+ login local
+ exec-timeout 10 0
+!
+end
+write memory

@@ -1,0 +1,124 @@
+! ============================================
+! CORE - Switch de cœur L3 (Cisco 3560)
+! Routage inter-VLAN, ACL de segmentation vidéo, NTP, SSH
+! ============================================
+enable
+configure terminal
+hostname CORE
+no ip domain-lookup
+ip domain-name video.local
+enable secret CHANGE_ME
+username admin privilege 15 secret CHANGE_ME
+service password-encryption
+banner motd # Reseau de videosurveillance - acces reserve #
+!
+ip routing
+!
+vlan 10
+ name CAMERAS
+vlan 20
+ name NVR_SERVEURS
+vlan 30
+ name EXPLOITATION
+vlan 99
+ name MANAGEMENT
+vlan 999
+ name PARKING
+!
+! ---------- Ports d'accès ----------
+interface FastEthernet0/1
+ description NVR-01
+ switchport mode access
+ switchport access vlan 20
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+!
+interface range FastEthernet0/10 - 11
+ description Postes d'exploitation
+ switchport mode access
+ switchport access vlan 30
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+!
+interface FastEthernet0/24
+ description Poste d'administration reseau
+ switchport mode access
+ switchport access vlan 99
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+!
+interface range FastEthernet0/2 - 9 , FastEthernet0/12 - 23 , GigabitEthernet0/2
+ switchport mode access
+ switchport access vlan 999
+ shutdown
+!
+! ---------- Trunk vers ACC1 ----------
+interface GigabitEthernet0/1
+ description Trunk vers ACC1
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ switchport trunk native vlan 999
+ switchport trunk allowed vlan 10,99
+ switchport nonegotiate
+!
+! ---------- SVI ----------
+interface Vlan10
+ description Passerelle cameras
+ ip address 192.168.10.1 255.255.255.0
+ ip access-group ACL_CAMERAS in
+ no shutdown
+!
+interface Vlan20
+ description Passerelle NVR
+ ip address 192.168.20.1 255.255.255.0
+ no shutdown
+!
+interface Vlan30
+ description Passerelle postes d'exploitation
+ ip address 192.168.30.1 255.255.255.0
+ ip access-group ACL_EXPLOITATION in
+ no shutdown
+!
+interface Vlan99
+ description Management
+ ip address 192.168.99.1 255.255.255.0
+ no shutdown
+!
+! ---------- ACL ----------
+! Cameras : uniquement vers le NVR et le NTP de la passerelle
+ip access-list extended ACL_CAMERAS
+ permit ip 192.168.10.0 0.0.0.255 host 192.168.20.10
+ permit udp 192.168.10.0 0.0.0.255 host 192.168.10.1 eq 123
+ deny ip any any
+!
+! Postes d'exploitation : uniquement les services du NVR
+ip access-list extended ACL_EXPLOITATION
+ permit tcp 192.168.30.0 0.0.0.255 host 192.168.20.10 eq 80
+ permit tcp 192.168.30.0 0.0.0.255 host 192.168.20.10 eq 443
+ permit tcp 192.168.30.0 0.0.0.255 host 192.168.20.10 eq 554
+ permit tcp 192.168.30.0 0.0.0.255 host 192.168.20.10 eq 8000
+ permit icmp 192.168.30.0 0.0.0.255 host 192.168.20.10
+ deny ip 192.168.30.0 0.0.0.255 192.168.10.0 0.0.0.255
+ deny ip any any
+!
+! ---------- NTP ----------
+! Le CORE sert de reference de temps aux cameras et au NVR
+ntp master 3
+!
+! ---------- Administration SSH ----------
+! Executer ensuite : crypto key generate rsa  (taille 2048)
+ip ssh version 2
+ip access-list standard ADMIN_SSH
+ permit 192.168.99.0 0.0.0.255
+!
+line console 0
+ login local
+ logging synchronous
+line vty 0 15
+ access-class ADMIN_SSH in
+ transport input ssh
+ login local
+ exec-timeout 10 0
+!
+end
+write memory
